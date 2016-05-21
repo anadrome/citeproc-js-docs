@@ -1,0 +1,59 @@
+tinymce.PluginManager.add('citesupport', function(editor) {
+    /**
+     * Build a menu to set the style and trigger reinstantiation of
+     *   the processor. This menu will be needed in all deployments,
+     *   but is not part of the processor code itself.
+     *
+     * @return {void}
+     */
+    buildStyleMenu () {
+        this.debug('buildStyleMenu()');
+        var styleData = [
+            {
+                title: "ACM Proceedings",
+                id: "acm-sig-proceedings"
+            },
+            {
+                title: "AMA",
+                id: "american-medical-association"
+            },
+            {
+                title: "Chicago (author-date)",
+                id: "chicago-author-date"
+            },
+            {
+                title: "Chicago (full note)",
+                id: "jm-chicago-fullnote-bibliography"
+            },
+            {
+                title: "DIN-1505-2 (alpha)",
+                id: "din-1505-2-alphanumeric"
+            },
+            {
+                title: "JM Indigo",
+                id: "jm-indigobook"
+            },
+            {
+                title: "JM Indigo (L. Rev.)",
+                id: "jm-indigobook-law-review"
+            },
+            {
+                title: "JM OSCOLA",
+                id: "jm-oscola"
+            }
+        ]
+        var defaultStyle = this.safeStorage.defaultStyle;
+        var stylesMenu = document.getElementById('citation-styles');
+        for (var i = 0, ilen = styleData.length; i < ilen; i++) {
+            var styleDatum = styleData[i];
+            var option = document.createElement('option');
+            option.setAttribute('value', styleDatum.id);
+            if (styleDatum.id === defaultStyle) {
+                option.selected = true;
+            }
+            option.innerHTML = styleDatum.title;
+            stylesMenu.appendChild(option);
+        }
+    }
+
+});

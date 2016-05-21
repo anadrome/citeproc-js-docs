@@ -7,6 +7,12 @@ Demo: Dynamic Editing
 
 ------------------------
 
+------
+Editor
+------
+
+|editor|
+
 ---------------
 Dynamic Editing
 ---------------
@@ -16,7 +22,7 @@ Dynamic Editing
 ..
    **Locale:** |locales|
 
-This page demonstrates dynamic citation editing in the browser. The
+xxThis page demonstrates dynamic citation editing in the browser. The
 underlying code was prepared in response to work by `Derek Sifford
 <https://github.com/dsifford>`_. Click on the chevrons to open a
 citation widget,\ |citeme| select one or more references, and press
