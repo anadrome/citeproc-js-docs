@@ -93,13 +93,12 @@ tinymce.PluginManager.add('citeaddedit', function(editor) {
 			title: 'Add/Edit citation',
 			body: menu,
 			onsubmit: function(e) {
-				if (isCitation) {
-                    // Do stuff maybe.
-				} else {
-					editor.selection.collapse(true);
+				if (!isCitation) {
+					//editor.selection.collapse(true);
                     //editor.insertContent('<span class="bogus">hello</span>');
-					editor.execCommand('mceInsertContent', false, '<span class="citation">{Citation}</span>');
+					editor.execCommand('mceInsertContent', false, '<span class="citation mceNonEditable">{Citation}</span>');
 				}
+                // Kick off update request here.
 			}
 		});
 	}
