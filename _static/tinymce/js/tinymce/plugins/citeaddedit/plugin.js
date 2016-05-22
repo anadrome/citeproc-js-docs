@@ -158,8 +158,10 @@ tinymce.PluginManager.add('citeaddedit', function(editor) {
                             // If no citations remain, reinit
                             callInitProcessor();
                         } else {
-                            // Otherwise use first citation for update
+                            // Otherwise use first citation for update and remove this citation
                             citation = citesupport.config.citationByIndex[0];
+                            var citationNode = citesupport.editor.getDoc().getElementById(citationID);
+                            citationNode.parentNode.removeChild(citationNode);
                         }
                     }
                 }
