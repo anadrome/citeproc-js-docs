@@ -268,18 +268,17 @@ tinymce.PluginManager.add('citesupport', function(editor) {
             }
 
             // Assure that every citation node has citationID
-            var citationNodes = this.editor.dom.select('span.citation', this.editor.getBody());
-            console.log('len of citationNodes='+citationNodes.length+', len of data=' + data.length);
+            var citationNodes = this.pruneNodeList(this.editor.getDoc().getElementsByClassName('citation'));
             for (var i = 0, ilen = data.length; i < ilen; i++) {
-                console.log('data[i]='+JSON.stringify(data[i]));
                 var citationNode = citationNodes[data[i][0]];
                 var citationID = data[i][2];
-                if (!citationNode.getAttribute('id')) {
+                if (!citationNode.hasAttribute('id')) {
                     citationNode.setAttribute('id', citationID);
                 }
             }
             // Update citationIdToPos for all nodes
             for (var i = 0, ilen = citationNodes.length; i < ilen; i++) {
+                var citationID = citationNodes[i].id;
                 this.config.citationIdToPos[citationID] = i;
             }
             // Update data on all nodes in the return
@@ -292,6 +291,9 @@ tinymce.PluginManager.add('citesupport', function(editor) {
                     var inlineData = btoa(JSON.stringify(this.config.citationByIndex[this.config.citationIdToPos[data[i][2]]]));
                     dataNode.innerHTML = inlineData;
                     citesupportDataContainer.appendChild(dataNode);
+                } else {
+                    var inlineData = btoa(JSON.stringify(this.config.citationByIndex[this.config.citationIdToPos[data[i][2]]]));
+                    dataNode.innerHTML = inlineData;
                 }
             }
             
@@ -353,7 +355,7 @@ tinymce.PluginManager.add('citesupport', function(editor) {
                     footnotes[i].parentNode.removeChild(footnotes[i]);
                 }
                 // Regenerate all footnotes from hidden texts
-                var citationNodes = this.editor.getDoc().getElementsByClassName('citation');
+                var citationNodes = this.pruneNodeList(this.editor.getDoc().getElementsByClassName('citation'));
                 for (var i = 0, ilen = citationNodes.length; i < ilen; i++) {
                     var footnoteText = citationNodes[i].childNodes[1].innerHTML;
                     var footnoteNumber = (i + 1);
@@ -368,9 +370,7 @@ tinymce.PluginManager.add('citesupport', function(editor) {
                 for (var i = 0, ilen = data.length; i < ilen; i++) {
                     var tuple = data[i];
                     var citationID = tuple[2];
-                    console.log("WHAT HUH? " + citationID);
                     var citationNode = this.editor.getDoc().getElementById(citationID);
-                    console.log("   not even a little? " + citationNode);
                     var citationText = tuple[1];
                     citationNode.innerHTML = citationText;
                 }
@@ -437,6 +437,17 @@ tinymce.PluginManager.add('citesupport', function(editor) {
             }
         }
         
+        pruneNodeList(nodeList) {
+            var retList = [];
+            for (var i = 0, ilen = nodeList.length; i < ilen; i++) {
+                if (nodeList[i].parentNode.classList.contains('mce-offscreen-selection')) {
+                    continue;
+                }
+                retList.push(nodeList[i]);
+            }
+            return retList;
+        }
+
         /**
          * Replace citation span nodes and get ready to roll. Puts
          *   document into the state it would have been in at first
@@ -449,7 +460,7 @@ tinymce.PluginManager.add('citesupport', function(editor) {
 
             // Stage 0: Collect data from document nodes
             this.config.citationIdToPos = {};
-            var citationNodes = this.editor.getDoc().getElementsByClassName('citation');
+            var citationNodes = this.pruneNodeList(this.editor.getDoc().getElementsByClassName('citation'));
             for (var i = 0, ilen = citationNodes.length; i < ilen; i++) {
                 var citationID = citationNodes[i].id;
                 this.config.citationIdToPos[citationID] = i;
@@ -465,7 +476,6 @@ tinymce.PluginManager.add('citesupport', function(editor) {
                     if (!dataElement.classList || !dataElement.classList.contains('citation-data')) {
                         continue;
                     }
-                    console.log(atob(dataElement.innerHTML));
                     var data = JSON.parse(atob(dataElement.innerHTML));
                     sortableData.push({
                         seq: this.config.citationIdToPos[data.citationID],
@@ -497,7 +507,7 @@ tinymce.PluginManager.add('citesupport', function(editor) {
             // The rest of this may not be necessary ...
 
             // Stage 2: check that all citation locations are in posToCitationId with existing citationIDs and have span tags set
-            var pegs = this.editor.getDoc().getElementsByClassName('citation');
+            var pegs = this.pruneNodeList(this.editor.getDoc().getElementsByClassName('citation'));
             for (var i = 0, ilen = this.config.citationByIndex.length; i < ilen; i++) {
                 var citation = this.config.citationByIndex[i];
                 var citationID = citation ? citation.citationID : null;
@@ -511,7 +521,7 @@ tinymce.PluginManager.add('citesupport', function(editor) {
             
             // Stage 3: check that number of citation nodes and number of stored citations matches
             var objectLength = this.config.citationByIndex.length;
-            var nodeLength = this.editor.getDoc().getElementsByClassName('citation').length;
+            var nodeLength = this.pruneNodeList(this.editor.getDoc().getElementsByClassName('citation')).length;
             if (objectLength !== nodeLength) {
                 this.debug('WARNING: document citation node and citation object counts do not match. Removing citations.');
                 this.config.citationByIndex = [];

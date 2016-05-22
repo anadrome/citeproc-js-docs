@@ -68,37 +68,42 @@ tinymce.PluginManager.add('citeaddedit', function(editor) {
         return menu;
     }
 
+    function pruneNodeList(nodeList) {
+        var retList = [];
+        for (var i = 0, ilen = nodeList.length; i < ilen; i++) {
+            if (nodeList[i].parentNode.classList.contains('mce-offscreen-selection')) {
+                continue;
+            }
+            retList.push(nodeList[i]);
+        }
+        return retList;
+    }
+
 	function showDialog() {
         // Get selected node, and citationID if any
-        console.log('WHAT OF LENGTH **NOW**? '+citesupport.config.citationByIndex.length);
 		var selectedNode = editor.selection.getNode(), citationID = '';
 		var isCitation = selectedNode.tagName == 'SPAN' && editor.dom.hasClass(selectedNode, 'citation');
 		if (isCitation) {
 			citationID = selectedNode.id || '';
 		}
         // Reconcile citationByIndex and editor nodes
-        var citations = editor.getDoc().getElementsByClassName('citation');
-        console.log('WAT IS THE FRIGGIN LEN? '+citations.length);
+        var citations = pruneNodeList(editor.getDoc().getElementsByClassName('citation'));
         var newCitationByIndex = [];
         var newCitationIdToPos = {};
         var offset = 0;
+
         for (var i = 0, ilen = citations.length; i < ilen; i++) {
             var node = citations[i];
-            if (node.parentNode.classList.contains('mce-offscreen-selection')) {
-                offset += -1;
-                continue;
-            }
             var citationPos = citesupport.config.citationIdToPos[node.id];
             var citation = citesupport.config.citationByIndex[citationPos];
             if ("undefined" !== typeof newCitationIdToPos[node.id]) {
                 citation = JSON.parse(JSON.stringify(citation));
                 delete citation.citationID;
             } else {
-                newCitationIdToPos[node.id] = (i + offset);
+                newCitationIdToPos[node.id] = (i);
             }
             newCitationByIndex.push(citation);
         }
-        console.log('LENTH-TO-BE: '+newCitationByIndex.length);
         citesupport.config.citationByIndex = newCitationByIndex;
         citesupport.config.citationIdToPos = newCitationIdToPos;
         
@@ -115,7 +120,6 @@ tinymce.PluginManager.add('citeaddedit', function(editor) {
 			body: menu,
 			onsubmit: function(e) {
                 // What has been selected???
-                console.log('WHAT OF LENGTH **NOW**? '+citesupport.config.citationByIndex.length);
                 var newCitationItems = [];
                 for (var key in e.data) {
                     if (e.data[key]) {
@@ -160,21 +164,24 @@ tinymce.PluginManager.add('citeaddedit', function(editor) {
                     }
                 }
                 // Now trawl through citations again and figure out where we are
-                var citations = editor.getDoc().getElementsByClassName('citation');
+                var citations = pruneNodeList(editor.getDoc().getElementsByClassName('citation'));
                 var citationsPre = [];
                 var citationsPost = [];
-                console.log('WHAT OF LENGTH? '+citesupport.config.citationByIndex.length);
-                for (var i = 0, ilen = citations.length; i < ilen; i++) { 
+                var offset = 0;
+                for (var i = 0, ilen = citations.length; i < ilen; i++) {
                     var citationNode = citations[i];
                     if (citationNode.id === citationID || !citationNode.id) {
+                        var offset = 0;
+                        if (isCitation) {
+                            offset = 1;
+                        }
                         if (citesupport.config.citationByIndex.slice(0, i).length) {
                             citationsPre = citesupport.config.citationByIndex.slice(0, i).map(function(obj){
                                 return [obj.citationID, 0]
                             });
                         }
-                        if (citesupport.config.citationByIndex.slice(i + 1).length) {
-                            console.log('WHAT THE BLAZES??? '+JSON.stringify(citesupport.config.citationByIndex.slice(i + 1)));
-                            citationsPost = citesupport.config.citationByIndex.slice(i + 1).map(function(obj){
+                        if (citesupport.config.citationByIndex.slice(i + offset).length) {
+                            citationsPost = citesupport.config.citationByIndex.slice(i + offset).map(function(obj){
                                 return [obj.citationID, 0];
                             });;
                         }
