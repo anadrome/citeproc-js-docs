@@ -4,10 +4,11 @@ tinymce.PluginManager.add('citeaddedit', function(editor) {
 
     function getIDs (citationID) {
         var itemIDs = [];
-        var citation;
+        var citation = null;
         for (var i = 0, ilen = citesupport.config.citationByIndex.length; i < ilen; i++) {
             if (citesupport.config.citationByIndex[i].citationID === citationID) {
                 citation = citesupport.config.citationByIndex[i];
+                break;
             }
         }
         // Although citation should ALWAYS exist if document data has cleared validation
@@ -55,30 +56,51 @@ tinymce.PluginManager.add('citeaddedit', function(editor) {
         return menu;
     }
 
-    /*
-      function updateValue(e) {
-        console.log('XX GOT: '+e.target.name());
-        console.log('XX has got citesupport? '+editor.plugins.citesupport);
-      }
-    */
-
     function configMenu(menu, itemIDs) {
         for (var i = 0, ilen = itemIDs.length; i < ilen; i++) {
             var itemID = itemIDs[i];
             for (var j = 0, jlen = menu.length; j < jlen; j++) {
-                menu[j].checked = true;
+                if (itemID === menu[j].name) {
+                    menu[j].checked = true;
+                }
             }
         }
         return menu;
     }
 
 	function showDialog() {
+        // Get selected node, and citationID if any
+        console.log('WHAT OF LENGTH **NOW**? '+citesupport.config.citationByIndex.length);
 		var selectedNode = editor.selection.getNode(), citationID = '';
 		var isCitation = selectedNode.tagName == 'SPAN' && editor.dom.hasClass(selectedNode, 'citation');
-
 		if (isCitation) {
 			citationID = selectedNode.id || '';
 		}
+        // Reconcile citationByIndex and editor nodes
+        var citations = editor.getDoc().getElementsByClassName('citation');
+        console.log('WAT IS THE FRIGGIN LEN? '+citations.length);
+        var newCitationByIndex = [];
+        var newCitationIdToPos = {};
+        var offset = 0;
+        for (var i = 0, ilen = citations.length; i < ilen; i++) {
+            var node = citations[i];
+            if (node.parentNode.classList.contains('mce-offscreen-selection')) {
+                offset += -1;
+                continue;
+            }
+            var citationPos = citesupport.config.citationIdToPos[node.id];
+            var citation = citesupport.config.citationByIndex[citationPos];
+            if ("undefined" !== typeof newCitationIdToPos[node.id]) {
+                citation = JSON.parse(JSON.stringify(citation));
+                delete citation.citationID;
+            } else {
+                newCitationIdToPos[node.id] = (i + offset);
+            }
+            newCitationByIndex.push(citation);
+        }
+        console.log('LENTH-TO-BE: '+newCitationByIndex.length);
+        citesupport.config.citationByIndex = newCitationByIndex;
+        citesupport.config.citationIdToPos = newCitationIdToPos;
         
         // Okay!
         // So if we're at a citation, we check its ID and look up its itemIDs in
@@ -87,18 +109,93 @@ tinymce.PluginManager.add('citeaddedit', function(editor) {
         var itemIDs = getIDs(citationID);
         var menu = configMenu(menu, itemIDs);
 
-        // If we're not at a citation, we insert a new one.
-
+        // Popup
 		editor.windowManager.open({
 			title: 'Add/Edit citation',
 			body: menu,
 			onsubmit: function(e) {
+                // What has been selected???
+                console.log('WHAT OF LENGTH **NOW**? '+citesupport.config.citationByIndex.length);
+                var newCitationItems = [];
+                for (var key in e.data) {
+                    if (e.data[key]) {
+                        newCitationItems.push({
+                            id: key
+                        });
+                    }
+                }
+                var citation;
 				if (!isCitation) {
-					//editor.selection.collapse(true);
-                    //editor.insertContent('<span class="bogus">hello</span>');
-					editor.execCommand('mceInsertContent', false, '<span class="citation mceNonEditable">{Citation}</span>');
-				}
-                // Kick off update request here.
+                    if (newCitationItems.length) {
+					    editor.selection.collapse(true);
+					    editor.execCommand('mceInsertContent', false, '<span class="citation mceNonEditable">{Citation}</span>');
+                        // Get citation and proceed
+                        citation = {
+                            citationItems: newCitationItems,
+                            properties: {
+                                noteIndex: 0
+                            }
+                        }
+                    } else {
+                        // Did not add anything, so just quit
+                        return;
+                    }
+                } else if (citationID) {
+                    var citationPos = citesupport.config.citationIdToPos[citationID];
+                    if (newCitationItems.length) {
+                        // Get citation and proceed
+                        citation = citesupport.config.citationByIndex[citationPos];
+                        citation.citationItems = newCitationItems;
+                    } else {
+                        // Remove this citation from data and from DOM
+                        citesupport.config.citationByIndex = newCitationByIndex.slice(0, citationPos).concat(newCitationByIndex.slice(citationPos + 1));
+                        delete citesupport.config.citationIdToPos[citationID];
+                        if (citesupport.config.citationByIndex.length === 0) {
+                            // If no citations remain, reinit
+                            callInitProcessor();
+                        } else {
+                            // Otherwise use first citation for update
+                            citation = citesupport.config.citationByIndex[0];
+                        }
+                    }
+                }
+                // Now trawl through citations again and figure out where we are
+                var citations = editor.getDoc().getElementsByClassName('citation');
+                var citationsPre = [];
+                var citationsPost = [];
+                console.log('WHAT OF LENGTH? '+citesupport.config.citationByIndex.length);
+                for (var i = 0, ilen = citations.length; i < ilen; i++) { 
+                    var citationNode = citations[i];
+                    if (citationNode.id === citationID || !citationNode.id) {
+                        if (citesupport.config.citationByIndex.slice(0, i).length) {
+                            citationsPre = citesupport.config.citationByIndex.slice(0, i).map(function(obj){
+                                return [obj.citationID, 0]
+                            });
+                        }
+                        if (citesupport.config.citationByIndex.slice(i + 1).length) {
+                            console.log('WHAT THE BLAZES??? '+JSON.stringify(citesupport.config.citationByIndex.slice(i + 1)));
+                            citationsPost = citesupport.config.citationByIndex.slice(i + 1).map(function(obj){
+                                return [obj.citationID, 0];
+                            });;
+                        }
+                        break;
+                    }
+                }
+                // Aaaaaand fix up note numbers if this is a note style
+                if (citesupport.config.mode === 'note') {
+                    for (var i = 0, ilen = citationsPre.length; i < ilen; i++) {
+                        citationsPre[i][1] = (i + 1);
+                    }
+                    var offset = (citationsPre.length + 1);
+                    citation.properties.noteIndex = (offset);
+                    for (var i = 0, ilen = citationsPost.length; i < ilen; i++) {
+                        citationsPost[i][1] = (i + offset + 1);
+                    }
+                }
+                console.log('citation: '+citation.citationID);
+                console.log('citationsPre: '+JSON.stringify(citationsPre));
+                console.log('citationsPost: '+JSON.stringify(citationsPost));
+                citesupport.callRegisterCitation(citation, citationsPre, citationsPost);
 			}
 		});
 	}

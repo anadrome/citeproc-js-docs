@@ -69,81 +69,16 @@ tinymce.PluginManager.add('citesupport', function(editor) {
      * - Probably some other stuff that I've overlooked.
      */
 
-    class SafeStorage {
-        
-        constructor(citesupport) {
-            this.citesupport = citesupport;
-        }
-        
-        _safeStorageGet(key, fallback) {
-            var ret;
-            var val = localStorage.getItem(key);
-            if (!val) {
-                this.citesupport.debug('No value in storage!');
-                ret = fallback;
-            } else if (['{', '['].indexOf(val.slice(0, 1)) > -1) {
-                try {
-                    ret = JSON.parse(val);
-                } catch (e) {
-                    this.citesupport.debug('JSON parse error! ' + key +' ' + val);
-                    ret = fallback;
-                }
-            } else {
-                ret = val;
-            }
-            this.citesupport.config[key] = ret;
-            return ret;
-        }
-        
-        set defaultLocale(localeName) {
-            this.citesupport.config.defaultLocale = localeName;
-            localStorage.setItem('defaultLocale', localeName);
-        }
-        
-        set defaultStyle(styleName) {
-            localStorage.setItem('defaultStyle', styleName);
-            this.citesupport.config.defaultStyle = styleName;
-        }
-        
-        set citationByIndex(citationByIndex) {
-            localStorage.setItem('citationByIndex', JSON.stringify(citationByIndex));
-            this.citesupport.config.citationByIndex = citationByIndex;
-        }
-
-        set citationIdToPos(citationIdToPos) {
-            localStorage.setItem('citationIdToPos', JSON.stringify(citationIdToPos));
-            this.citesupport.config.citationIdToPos = citationIdToPos;
-        }
-
-        get defaultLocale() {
-            return this._safeStorageGet('defaultLocale', 'en-US');
-        }
-        
-        get defaultStyle() {
-            return this._safeStorageGet('defaultStyle', 'american-medical-association');
-        }
-        
-        get citationByIndex() {
-            return this._safeStorageGet('citationByIndex', []);
-        }
-
-        get citationIdToPos() {
-            return this._safeStorageGet('citationIdToPos', {});
-        }
-
-    }
-
     class CiteSupport {
 
         constructor(editor) {
             this.editor = editor;
-            this.safeStorage = new SafeStorage(this);
             this.config = {
                 debug: true,
                 mode: 'note',
                 defaultLocale: 'en-US',
                 defaultStyle: 'american-medical-association',
-                citationIDs: {},
+                citationIdToPos: {},
                 citationByIndex: [],
                 processorReady: false,
                 demo: true
@@ -167,7 +102,6 @@ tinymce.PluginManager.add('citesupport', function(editor) {
                     var citationData = me.convertRebuildDataToCitationData(e.data.rebuildData);
                     me.setCitations(me.config.mode, citationData);
                     me.setBibliography(e.data.bibliographyData);
-                    me.safeStorage.citationByIndex = me.config.citationByIndex;
                     me.config.processorReady = true;
                     break;
                     /**
@@ -186,7 +120,6 @@ tinymce.PluginManager.add('citesupport', function(editor) {
                     // setCitations() implicitly updates this.config.citationIDs
                     me.setCitations(me.config.mode, e.data.citationData, true);
                     me.setBibliography(e.data.bibliographyData);
-                    me.safeStorage.citationByIndex = me.config.citationByIndex;
                     me.config.processorReady = true;
                     break;
                 }
@@ -282,7 +215,7 @@ tinymce.PluginManager.add('citesupport', function(editor) {
          */
         initDocument() {
             this.debug('initDocument()');
-            this.callInitProcessor(this.safeStorage.defaultStyle, this.safeStorage.defaultLocale, this.safeStorage.citationByIndex);
+            this.callInitProcessor(this.config.defaultStyle, this.config.defaultLocale, this.config.citationByIndex);
         }
 
         /**
@@ -299,36 +232,66 @@ tinymce.PluginManager.add('citesupport', function(editor) {
          */
         setCitations(mode, data) {
             this.debug('setCitations()');
-            
+
+            // Before anything, make sure that footnote, bibligraphy and data
+            // blocks actually exist.
+            var body = this.editor.getBody();
+            var footnoteContainer = this.editor.getDoc().getElementById('footnote-container');
+            var bibliographyContainer = this.editor.getDoc().getElementById('bibliography-container');
+            var citesupportDataContainer = this.editor.getDoc().getElementById('citesupport-data-container');
+            if (!bibliographyContainer) {
+                var bibBlock = this.editor.getDoc().createElement('div');
+                bibBlock.setAttribute('id', 'bibliography-container');
+                bibBlock.classList.add('mceNonEditable');
+                bibBlock.setAttribute('contenteditable', "false");
+                bibBlock.hidden = true;
+                bibBlock.innerHTML = '<h2>Bibliography</h2><div id="bibliography"></div>'
+                body.appendChild(bibBlock);
+            }
+            if (!footnoteContainer) {
+                var footBlock = this.editor.getDoc().createElement('div');
+                footBlock.setAttribute('id', 'footnote-container');
+                footBlock.classList.add('mceNonEditable');
+                footBlock.setAttribute('contenteditable', "false");
+                footBlock.hidden = true;
+                footBlock.innerHTML = '<div class="footnote-header"><b>Footnotes</b></div><div id="footnotes"></div>';
+                body.insertBefore(footBlock, bibBlock);
+            }
+            if (!citesupportDataContainer) {
+                var dataBlock = this.editor.getDoc().createElement('div');
+                dataBlock.setAttribute('id', 'citesupport-data-container');
+                dataBlock.classList.add('mceNonEditable');
+                dataBlock.setAttribute('contenteditable', "false");
+                dataBlock.hidden = true;
+                body.appendChild(dataBlock);
+                citesupportDataContainer = this.editor.getDoc().getElementById('citesupport-data-container');
+            }
+
             // Assure that every citation node has citationID
-            // Store data on any node of first impression
-            var citationNodes = document.getElementsByClassName('citation');
+            var citationNodes = this.editor.dom.select('span.citation', this.editor.getBody());
+            console.log('len of citationNodes='+citationNodes.length+', len of data=' + data.length);
             for (var i = 0, ilen = data.length; i < ilen; i++) {
+                console.log('data[i]='+JSON.stringify(data[i]));
                 var citationNode = citationNodes[data[i][0]];
                 var citationID = data[i][2];
                 if (!citationNode.getAttribute('id')) {
                     citationNode.setAttribute('id', citationID);
-                    if (this.config.demo) {
-                        // Demo-only hack, used to reconstruct document state on load
-                        var pegs = document.getElementsByClassName('citeme');
-                        for (var j = 0, jlen = pegs.length; j < jlen; j++) {
-                            var sib = pegs[j].nextSibling;
-                            if (sib && sib.getAttribute && sib.getAttribute('id') === citationID) {
-                                this.config.citationIdToPos[citationID] = j;
-                            }
-                        }
-                    } else {
-                        // citationIdToPos isn't used for anything other than (optionally) validation
-                        var citations = document.getElementsByClassName('citation');
-                        for (var j = 0, jlen = citations.length; j < jlen; j++) {
-                            var citation = citations[j];
-                            if (citation && citation.getAttribute && citation.getAttribute('id') === citationID) {
-                                // NOTE: If stashing data on citation nodes, that should happen here.
-                                this.config.citationIdToPos[citationID] = j;
-                            }
-                        }
-                    }
-                    this.safeStorage.citationIdToPos = this.config.citationIdToPos;
+                }
+            }
+            // Update citationIdToPos for all nodes
+            for (var i = 0, ilen = citationNodes.length; i < ilen; i++) {
+                this.config.citationIdToPos[citationID] = i;
+            }
+            // Update data on all nodes in the return
+            for (var i = 0, ilen = data.length; i < ilen; i++) {
+                var dataNode = this.editor.getDoc().getElementById('csdata-' + data[i][2]);
+                if (!dataNode) {
+                    dataNode = this.editor.getDoc().createElement('div');
+                    dataNode.setAttribute('id', 'csdata-' + data[i][2]);
+                    dataNode.classList.add('citation-data');
+                    var inlineData = btoa(JSON.stringify(this.config.citationByIndex[this.config.citationIdToPos[data[i][2]]]));
+                    dataNode.innerHTML = inlineData;
+                    citesupportDataContainer.appendChild(dataNode);
                 }
             }
             
@@ -350,7 +313,7 @@ tinymce.PluginManager.add('citesupport', function(editor) {
              */
 
             if (mode === 'note') {
-                var footnoteContainer = document.getElementById('footnote-container');
+                var footnoteContainer = this.editor.getDoc().getElementById('footnote-container');
                 if (data.length) {
                     footnoteContainer.hidden = false;
                 } else {
@@ -360,7 +323,7 @@ tinymce.PluginManager.add('citesupport', function(editor) {
                     // Get data for each cite for update (ain't pretty)
                     var tuple = data[i];
                     var citationID = tuple[2];
-                    var citationNode = document.getElementById(citationID);
+                    var citationNode = this.editor.getDoc().getElementById(citationID);
                     var citationText = tuple[1];
                     var citationIndex = tuple[0];
                     var footnoteNumber = (citationIndex + 1);
@@ -379,33 +342,35 @@ tinymce.PluginManager.add('citesupport', function(editor) {
                 }
                 // Reset the number on all footnote markers
                 // (the processor does not issue updates for note-number-only changes)
-                var footnoteMarkNodes = document.getElementsByClassName('footnote-mark');
+                var footnoteMarkNodes = this.editor.getDoc().getElementsByClassName('footnote-mark');
                 for (var i = 0, ilen = footnoteMarkNodes.length; i < ilen; i++) {
                     var footnoteMarkNode = footnoteMarkNodes[i];
                     footnoteMarkNode.innerHTML = (i + 1);
                 }
                 // Remove all footnotes
-                var footnotes = document.getElementsByClassName('footnote');
+                var footnotes = this.editor.getDoc().getElementsByClassName('footnote');
                 for (var i = footnotes.length - 1; i > -1; i--) {
                     footnotes[i].parentNode.removeChild(footnotes[i]);
                 }
                 // Regenerate all footnotes from hidden texts
-                var citationNodes = document.getElementsByClassName('citation');
+                var citationNodes = this.editor.getDoc().getElementsByClassName('citation');
                 for (var i = 0, ilen = citationNodes.length; i < ilen; i++) {
                     var footnoteText = citationNodes[i].childNodes[1].innerHTML;
                     var footnoteNumber = (i + 1);
-                    var footnote = document.createElement('div');
+                    var footnote = this.editor.getDoc().createElement('p');
                     footnote.classList.add('footnote');
                     footnote.innerHTML = '<span class="footnote"><span class="footnote-number">' + footnoteNumber + '</span><span class="footnote-text">' + footnoteText + '</span></span>';
                     footnoteContainer.appendChild(footnote);
                 }
             } else {
-                var footnoteContainer = document.getElementById('footnote-container');
+                var footnoteContainer = this.editor.getDoc().getElementById('footnote-container');
                 footnoteContainer.hidden = true;
                 for (var i = 0, ilen = data.length; i < ilen; i++) {
                     var tuple = data[i];
                     var citationID = tuple[2];
-                    var citationNode = document.getElementById(citationID);
+                    console.log("WHAT HUH? " + citationID);
+                    var citationNode = this.editor.getDoc().getElementById(citationID);
+                    console.log("   not even a little? " + citationNode);
                     var citationText = tuple[1];
                     citationNode.innerHTML = citationText;
                 }
@@ -419,15 +384,15 @@ tinymce.PluginManager.add('citesupport', function(editor) {
          */
         setBibliography(data) {
             this.debug('setBibliography()');
-            var bibContainer = document.getElementById('bibliography-container');
+            var bibContainer = this.editor.getDoc().getElementById('bibliography-container');
             if (!data || !data[1] || data[1].length === 0) {
                 bibContainer.hidden = true;
                 return;
             };
-            var bib = document.getElementById('bibliography');
+            var bib = this.editor.getDoc().getElementById('bibliography');
             bib.setAttribute('style', 'visibility: hidden;');
             bib.innerHTML = data[1].join('\n');
-            var entries = document.getElementsByClassName('csl-entry');
+            var entries = this.editor.getDoc().getElementsByClassName('csl-entry');
             if (data[0].hangingindent) {
                 for (var i = 0, ilen = entries.length; i < ilen; i++) {
                     var entry = entries[i];
@@ -444,16 +409,16 @@ tinymce.PluginManager.add('citesupport', function(editor) {
                     var entry = entries[i];
                     entry.setAttribute('style', 'white-space: nowrap;');
                 }
-                var numbers = document.getElementsByClassName('csl-left-margin');
+                var numbers = this.editor.getDoc().getElementsByClassName('csl-left-margin');
                 for (var i = 0, ilen = numbers.length; i < ilen; i++) {
                     var number = numbers[i];
-                    number.setAttribute('style', 'display:inline-block;' + offsetSpec);
+                    number.setAttribute('style', 'display:inline-block;vertical-align:top;' + offsetSpec);
                 }
                 if (data[0].maxoffset) {
                     // cheat
                     var widthSpec = '';
-                    var texts = document.getElementsByClassName('csl-right-inline');
-                    var containerWidth = document.getElementById('dynamic-editing').offsetWidth;
+                    var texts = this.editor.getDoc().getElementsByClassName('csl-right-inline');
+                    var containerWidth = this.editor.getDoc().getElementById('tinymce').offsetWidth;
                     var numberWidth = (data[0].maxoffset*(90/9));
                     widthSpec = 'width:' + (containerWidth-numberWidth-20) + 'px;';
                     for (var i = 0, ilen = texts.length; i < ilen; i++) {
@@ -471,345 +436,6 @@ tinymce.PluginManager.add('citesupport', function(editor) {
                 bib.setAttribute('style', 'visibility: visible;');
             }
         }
-        /**
-         * Set or acquire a citation node for editing. If the node is
-         * newly set, it will not have a processor-assigned citationID.
-         * The presence or absence of citationID is used in later code to
-         * determine how to handle a save operation.
-         * 
-         * This is demo code: replace it with something more sophisticated
-         * for production.
-         *
-         * @param {Event} e An event generated by the DOM
-         */
-        citationWidgetHandler(e) {
-            citesupport.debug('citationWidgetHandler()');
-
-            // In the demo, citations are set on a "citeme peg"
-            // hard-coded into the document.
-            //
-            // If the peg has a citation node as its following sibling,
-            // open it for editing.
-            //
-            // If the peg is not followed by a citation node, add
-            // one and open it for editing.
-            
-            var peg = e.target;
-            var sibling = peg.nextSibling;
-            var hasCitation = (sibling && sibling.classList && sibling.classList.contains('citation'));
-            var citation;
-            if (hasCitation) {
-                citation = sibling;
-            } else {
-                citation = document.createElement('span');
-                citation.classList.add('citation');
-                peg.parentNode.insertBefore(citation, peg.nextSibling);
-            }
-            citesupport.citationWidget(citation);
-        }
-        
-        /**
-         * Presents an interface for inserting citations.
-         * 
-         * This is demo code: replace this function with something more
-         * sophisticated for production.
-         *
-         * @param {htmlElement} citation A span node with class `citation`
-         * @return {void}
-         */
-        citationWidget(citationNode) {
-            citesupport.debug('citationWidget()');
-
-            var itemData = [
-                {
-                    title: "Geller 2002",
-                    id: "item01"
-                },
-                {
-                    title: "West 1934",
-                    id: "item02"
-                },
-                {
-                    title: "Allen 1878",
-                    id: "item03"
-                },
-                {
-                    title: "American case",
-                    id: "item04"
-                },
-                {
-                    title: "British case",
-                    id: "item05"
-                }
-            ]
-            
-            var citeMenu = document.createElement('div');
-            citeMenu.setAttribute('id', 'cite-menu');
-            var innerHTML = '<div class="menu">'
-
-            for (var i=0,ilen=itemData.length;i<ilen;i++) {
-                var itemID = itemData[i].id;
-                var itemTitle = itemData[i].title;
-                innerHTML += '<label><input id="' + itemID + '" type="checkbox" name="cite-menu-item" value="' + itemID + '">' + itemTitle + '</label><br/>';
-            }
-            innerHTML += '<button id="cite-save-button" type="button">Save</button></div>';
-            citeMenu.innerHTML = innerHTML;
-            if (!this.hasRoomForMenu(citationNode)) {
-                citeMenu.firstChild.setAttribute('style', 'left:-160px !important;');
-            } else {
-                citeMenu.firstChild.setAttribute('style', 'left:0px !important;');
-            }
-            citationNode.insertBefore(citeMenu, citationNode.firstChild);
-
-            var button = document.getElementById('cite-save-button');
-            
-            var citationID = citationNode.getAttribute('id');
-            
-            if (citationID) {
-                var citation;
-                for (var i = 0, ilen = citesupport.config.citationByIndex.length; i < ilen; i++) {
-                    if (citesupport.config.citationByIndex[i].citationID === citationID) {
-                        citation = citesupport.config.citationByIndex[i];
-                    }
-                }
-                // Although citation should ALWAYS exist if document data has cleared validation
-                if (citation) {
-                    var itemIDs = citation.citationItems.map(function(obj){
-                        return obj.id;
-                    });
-                    for (var i = 0, ilen = itemIDs.length; i < ilen; i++) {
-                        var menuItem = document.getElementById(itemIDs[i]);
-                        menuItem.checked = true;
-                    }
-                }
-            }
-            button.addEventListener('click', citesupport.citationEditHandler);
-        }
-        
-        /**
-         * Perform the update operation appropriate to selections
-         *   and context.
-         *
-         *     - If this is a fresh citation and no items are to be added,
-         *       remove the menu and citation node.
-         *     - If this is a fresh citation and items are to be added,
-         *       request the update from the processor.
-         *     - If this is an existing citation and no items are to be used,
-         *       and removing the existing cites leaves none, request processor
-         *       initialization.
-         *     - If this is an existing citation and no items are to be used,
-         *       and removing the existing cites will leave some, update
-         *       using the first citation in the document.
-         *     - If this is an existing citation and items are to be used,
-         *       update this citation in context.
-         * 
-         * @params {Event} e An event object
-         * @return {void}
-         */
-        citationEditHandler(e) {
-            citesupport.debug('citationEditHandler()');
-
-            
-
-            var menu = document.getElementById('cite-menu');
-            var citationItems = citesupport.getCitationItemIdsFrom(menu);
-            var citationNode = menu.parentNode;
-            var citationID = citationNode.getAttribute('id');
-            
-            // Before touching the processor, we need to assure that citationByIndex
-            // reflects current document state. In the demo, that's easy: the two are
-            // always congruent at the top of this handler. With free-text editing
-            // and the possibility of both internal and external cut-and-paste it won't
-            // be so easy.
-            
-            // In the code here, we assume that external cut-and-paste (i.e. pasting
-            // in text with `citesupport` citations) is not possible.
-            var citationNodes = document.getElementsByClassName('citation');
-            var citationByIndex = [];
-            var citationMap = {};
-            for (var i = 0, ilen = citesupport.config.citationByIndex.length; i < ilen; i++) {
-                var citation = citesupport.config.citationByIndex[i];
-                citationMap[citation.citationID] = i;
-            }
-            for (var i = 0, ilen = citationNodes.length; i < ilen; i++) {
-                var node = citationNodes[i];
-                var id = node.getAttribute('id');
-                if (id) {
-                    citationByIndex.push(citesupport.config.citationByIndex[citationMap[id]]);
-                }
-            }
-
-            // Next, we normalize our record of the note numbers.
-            // * In word processor context, note numbers are controlled by the
-            //   calling application, and should be taken at face value.
-            //   There, it is important to respect the application's assigned values,
-            //   since not all footnotes are inserted by the processor.
-            // * Here, though, all footnotes are generated by citationsupport,
-            //   and the browser doesn't have any special knowledge about them.
-            //   They are spoofed.
-            // * So before doing anything further, we force the numbers into sequence.
-            //   This will give the processor correct information for back-reference
-            //   cites in footnote styles.
-
-            for (var i = 0, ilen = citationByIndex.length; i < ilen; i++) {
-                var citation = citationByIndex[i];
-                if (citation.citationID) {
-                    if (citesupport.config.mode === 'note') {
-                        citation.properties.noteIndex = (i + 1);
-                    } else {
-                        citation.properties.noteIndex = 0;
-                    }
-                }
-            }
-            citesupport.safeStorage.citationByIndex = citationByIndex;
-
-            // If there are no citation items from the menu,
-            // then we are either removing an existing citation
-            // or doing nothing.
-            if (citationItems.length === 0) {
-                if (citationID) {
-                    // Remove an existing citation
-                    
-                    // Remove citation from DOM
-                    citationNode.parentNode.removeChild(citationNode);
-                    
-                    // Remove citation data from memory objects and storage
-                    delete citesupport.config.citationIDs[citationID];
-                    delete citesupport.config.citationIdToPos[citationID];
-
-                    // Remove citation from citationByIndex and citationIDs
-                    for (var i = citesupport.config.citationByIndex.length - 1; i > -1; i--) {
-                        if (citesupport.config.citationByIndex[i].citationID === citationID) {
-                            citesupport.config.citationByIndex = citesupport.config.citationByIndex.slice(0, i).concat(citesupport.config.citationByIndex.slice(i+1));
-
-                            // Adjust note numbers in citationByIndex child properties if note style
-                            if (citesupport.config.mode === 'note') {
-                                for (var j = i, jlen = citesupport.config.citationByIndex.length; j < jlen; j++) {
-                                    citesupport.config.citationByIndex[j].properties.noteIndex += -1;
-                                }
-                            }
-                        }
-                    }
-                    
-                    if (citesupport.config.citationByIndex.length === 0) {
-                        // If we have no citations left, initialize the processor
-                        citesupport.callInitProcessor(citesupport.config.defaultStyle, citesupport.config.defaultLocale, citesupport.config.citationByIndex);
-                    } else {
-                        // Get citation, citationsPre, citationsPost
-                        var splitData = citesupport.getCitationSplits();
-                        splitData.citation.properties.noteIndex = 1;
-                        
-                        // Adjust note numbers in citationByIndex child properties if note style
-                        if (citesupport.config.mode === 'note') {
-                            for (var i = 1, ilen = citesupport.config.citationByIndex.length; i < ilen; i++) {
-                                citesupport.config.citationByIndex[i].properties.noteIndex = (i + 1);
-                            }
-                        }
-                        
-                        citesupport.config.processorReady = true;
-                        citesupport.callRegisterCitation(splitData.citation, splitData.citationsPre, splitData.citationsPost);
-                    }
-                } else {
-                    // Just remove the menu AND the citation
-                    menu.parentNode.parentNode.removeChild(menu.parentNode);
-                }
-            } else {
-
-                // Get citationsPre and citationsPost
-                var citationNodes = document.getElementsByClassName('citation');
-                var splitData = citesupport.getCitationSplits(citationNodes);
-                
-                // Get the note number
-                var noteNumber = citesupport.config.mode === 'note' ? (splitData.citationsPre.length + 1) : 0;
-
-                // Compose the citation.
-                var citation;
-                if (splitData.citation) {
-                    citation = splitData.citation;
-                    citation.citationItems = citationItems;
-                } else {
-                    citation = {
-                        citationItems: citationItems,
-                        properties: {
-                            noteIndex: noteNumber
-                        }
-                    }
-                }
-                
-                // Submit the update request.
-                citesupport.callRegisterCitation(citation, splitData.citationsPre, splitData.citationsPost);
-            }
-        }
-        
-        /**
-         * Return a citation and descriptive arrays representing
-         *   citations before and after its position.
-         *
-         * If `nodes` argument is provided, return a citation object for
-         *   the current citation open for editing. If no `nodes` argument
-         *   is given, use the first citation in the document as the
-         *   "current" citation.
-         *
-         * 
-         *
-         * @param {HtmlElementList} nodes A list of citation nodes
-         * @return {Object[]} splitData An object with citation object as `citation`, an 
-         */
-        getCitationSplits(nodes) {
-            citesupport.debug('getCitationSplits()');
-            var splitData = {
-                citation: null,
-                citationsPre: [],
-                citationsPost: []
-            }
-            var current = 'citationsPre';
-            var offset = 0;
-            if (nodes) {
-                for (var i = 0, ilen = nodes.length; i < ilen; i++) {
-                    var node = nodes[i];
-                    if (node.firstChild && node.firstChild.getAttribute && node.firstChild.getAttribute('id') === 'cite-menu') {
-                        current = 'citationsPost';
-                        if (!node.getAttribute('id')) {
-                            // Inserting a new citation
-                            offset = -1;
-                        } else {
-                            // Editing an existing citation
-                            splitData.citation = citesupport.config.citationByIndex[i];
-                        }
-                    } else {
-                        var citation = citesupport.config.citationByIndex[i + offset];
-                        splitData[current].push([citation.citationID, citation.properties.noteIndex]);
-                    }
-                }
-            } else {
-                splitData.citation = citesupport.config.citationByIndex[0];
-                splitData.citationsPost = citesupport.config.citationByIndex.slice(1).map(function(obj){
-                    return [obj.citationID, obj.properties.noteIndex];
-                })
-            }
-            return splitData;
-        }
-
-        /**
-         * Read and return selections from citation menu.
-         *
-         * @param {HtmlElement} menu A DOM node containing input elements of type `checkbox`
-         * @return {Object[]} An array of objects, each with an `id` value
-         */
-        getCitationItemIdsFrom(menu) {
-            this.debug('getCitationItemIdsFrom()');
-            var citationItems = [];
-            var checkboxes = menu.getElementsByTagName('input');
-            for (var i = 0, ilen = checkboxes.length; i < ilen; i++) {
-                var checkbox = checkboxes[i];
-                if (checkbox.checked) {
-                    citationItems.push({
-                        id: checkbox.getAttribute('value')
-                    });
-                }
-            }
-            return citationItems;
-        }
         
         /**
          * Replace citation span nodes and get ready to roll. Puts
@@ -822,126 +448,81 @@ tinymce.PluginManager.add('citesupport', function(editor) {
             this.debug('spoofDocument()');
 
             // Stage 0: Collect data from document nodes
-
-            // ???
-
-            console.log("?? " + this.editor)
-
-            
-
-            this.safeStorage.citationIdToPos;
-
-            // Stage 1: Check that all array items have citationID
-            var citationByIndex = this.safeStorage.citationByIndex;
-            var citationIDs = {};
-            for (var i=0, ilen=this.config.citationByIndex.length; i > ilen; i++) {
-                var citation = this.config.citationByIndex[i];
-                if (!this.config.citationIDs[citation.citationID]) {
-                    this.debug('WARNING: encountered a stored citation that was invalid or had no citationID. Removing citations.');
-                    this.safeStorage.citationByIndex = [];
-                    this.safeStorage.citationIdToPos = {};
-                    break;
-                }
-                citationIDs[citation.citationID] = true;
+            this.config.citationIdToPos = {};
+            var citationNodes = this.editor.getDoc().getElementsByClassName('citation');
+            for (var i = 0, ilen = citationNodes.length; i < ilen; i++) {
+                var citationID = citationNodes[i].id;
+                this.config.citationIdToPos[citationID] = i;
             }
-            this.config.citationIDs = citationIDs;
-            
-            // Stage 2: check that all citation locations are in posToCitationId with existing citationIDs and have span tags set
-            var pegs;
-            if (this.config.demo) {
-                pegs = document.getElementsByClassName('citeme');
+            var dataContainer = this.editor.getDoc().getElementById('citesupport-data-container');
+            if (!dataContainer) {
+                this.config.citationByIndex = [];
+                this.config.citationIdToPos = {};
             } else {
-                pegs = document.getElementsByClassName('citation');
+                var sortableData = [];
+                for (var i = 0, ilen = dataContainer.children.length; i < ilen; i++) {
+                    var dataElement = dataContainer.children[i];
+                    if (!dataElement.classList || !dataElement.classList.contains('citation-data')) {
+                        continue;
+                    }
+                    console.log(atob(dataElement.innerHTML));
+                    var data = JSON.parse(atob(dataElement.innerHTML));
+                    sortableData.push({
+                        seq: this.config.citationIdToPos[data.citationID],
+                        citation: data
+                    });
+                }
+                sortableData.sort(function(a,b){
+                    if (a.seq > b.seq) {
+                        return 1
+                    } else if (a.seq < b.seq) {
+                        return -1
+                    } else {
+                        return 0
+                    }
+                });
+                this.config.citationByIndex = sortableData.map(function(obj){
+                    return obj.citation;
+                });
             }
+
+            // Stage 1: remove data nodes that are not reflected in citations
+            var nodes = this.editor.getDoc().getElementsByClassName('citation-data');
+            for (var i = nodes.length - 1; i > -1; i--) {
+                if ("number" !== typeof this.config.citationIdToPos[nodes.id]) {
+                    nodes[i].parentNode.removeChild(nodes[i]);
+                }
+            }
+
+            // The rest of this may not be necessary ...
+
+            // Stage 2: check that all citation locations are in posToCitationId with existing citationIDs and have span tags set
+            var pegs = this.editor.getDoc().getElementsByClassName('citation');
             for (var i = 0, ilen = this.config.citationByIndex.length; i < ilen; i++) {
                 var citation = this.config.citationByIndex[i];
                 var citationID = citation ? citation.citationID : null;
                 if ("number" !== typeof this.config.citationIdToPos[citationID]) {
                     this.debug('WARNING: invalid state data. Removing citations.');
-                    this.safeStorage.citationByIndex = [];
-                    this.safeStorage.citationIdToPos = {};
+                    this.config.citationByIndex = [];
+                    this.config.citationIdToPos = {};
                     break;
-                } else if (this.config.demo) {
-                    var citationNode = document.createElement('span');
-                    citationNode.classList.add('citation');
-                    citationNode.setAttribute('id', citationID);
-                    var peg = pegs[this.config.citationIdToPos[citationID]];
-                    peg.parentNode.insertBefore(citationNode, peg.nextSibling);
                 }
             }
             
             // Stage 3: check that number of citation nodes and number of stored citations matches
-            var objectLength = citesupport.config.citationByIndex.length;
-            var nodeLength = document.getElementsByClassName('citation').length;
+            var objectLength = this.config.citationByIndex.length;
+            var nodeLength = this.editor.getDoc().getElementsByClassName('citation').length;
             if (objectLength !== nodeLength) {
                 this.debug('WARNING: document citation node and citation object counts do not match. Removing citations.');
-                this.safeStorage.citationByIndex = [];
-                this.safeStorage.citationIdToPos = {};
-                var citations = document.getElementsByClassName('citation');
+                this.config.citationByIndex = [];
+                this.config.citationIdToPos = {};
+                var citations = this.editor.getDoc().getElementsByClassName('citation');
                 for (var i=0, ilen=citations.length; i < ilen; i++) {
                     citations[0].parentNode.removeChild(citations[0]);
                 }
             }
         }
 
-        /**
-         * Listen for selections on the style menu, and initialize the processor
-         *   for the selected style.
-         *
-         * @return {void}
-         */
-        setStyleListener() {
-            this.debug('setStyleListener()');
-            document.body.addEventListener('change', function(e) {
-                if (e.target.getAttribute('id') === 'citation-styles') {
-                    citesupport.safeStorage.defaultStyle = e.target.value;
-                    citesupport.callInitProcessor(citesupport.config.defaultStyle, citesupport.config.defaultLocale, citesupport.config.citationByIndex);
-                }
-            });
-        }
-
-        /**
-         * Listen for click events on the fixed pegs used in the demo.
-         *   This is cheating. :-)
-         *
-         * @return {void}
-         */
-        setPegListener() {
-            this.debug('setPegListener()');
-            document.body.addEventListener('click', function(e) {
-                if (!citesupport.config.demo || e.target.classList.contains('citeme')) {
-                    if (document.getElementById('cite-menu')) return;
-                    citesupport.citationWidgetHandler(e);
-                }
-            });
-        }
-
-
-        /**
-         * This is a demo-specific hack for the citation widget.
-         * It's a helper function used to keep the widget in-frame on 
-         * small devices.
-         */
-        hasRoomForMenu(obj) {
-	        var curleft = 0, curtop = 0;
-            if (obj.offsetParent) {
-                do {
-			        curleft += obj.offsetLeft;
-			        curtop += obj.offsetTop;
-                } while (obj = obj.offsetParent);
-            }
-	        var xpos = [curleft,curtop][0];
-
-            var w = window,
-            d = document,
-            e = d.documentElement,
-            g = d.getElementsByTagName('body')[0],
-            x = (w.innerWidth || e.clientWidth || g.clientWidth);
-
-            var screenwidth = x;
-            
-            return ((screenwidth - xpos) > 114);
-        }
     }
 
     var citesupport = new CiteSupport(editor);
