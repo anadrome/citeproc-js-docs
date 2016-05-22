@@ -215,6 +215,7 @@ tinymce.PluginManager.add('citesupport', function(editor) {
          */
         initDocument() {
             this.debug('initDocument()');
+            this.spoofDocument();
             this.callInitProcessor(this.config.defaultStyle, this.config.defaultLocale, this.config.citationByIndex);
         }
 
@@ -508,14 +509,12 @@ tinymce.PluginManager.add('citesupport', function(editor) {
 
             // Stage 2: check that all citation locations are in posToCitationId with existing citationIDs and have span tags set
             var pegs = this.pruneNodeList(this.editor.getDoc().getElementsByClassName('citation'));
-            for (var i = 0, ilen = this.config.citationByIndex.length; i < ilen; i++) {
+            for (var i = this.config.citationByIndex.length - 1; i > -1; i--) {
                 var citation = this.config.citationByIndex[i];
                 var citationID = citation ? citation.citationID : null;
                 if ("number" !== typeof this.config.citationIdToPos[citationID]) {
-                    this.debug('WARNING: invalid state data. Removing citations.');
-                    this.config.citationByIndex = [];
-                    this.config.citationIdToPos = {};
-                    break;
+                    this.debug('WARNING: invalid state data. Removing offending citation record.');
+                    this.config.citationByIndex = this.config.citationByIndex.slice(0, i).concat(this.config.citationByIndex.slice(i + 1));
                 }
             }
             
@@ -539,7 +538,6 @@ tinymce.PluginManager.add('citesupport', function(editor) {
     this.citesupport = citesupport;
 
     window.addEventListener('load', function(e){
-        citesupport.spoofDocument();
         citesupport.initDocument();
     });
 
