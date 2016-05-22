@@ -7,7 +7,15 @@ tinymce.PluginManager.add('citestylemenu', function(editor) {
         text: 'Citation style',
         icon: false,
         onselect: function (e) {
-            citesupport.config.defaultStyle = this.value();
+            // Style
+            var styleContainer = citesupport.editor.getDoc().getElementById('citesupport-style-container');
+            if (!styleContainer) {
+                styleContainer = citesupport.editor.getDoc().createElement('div');
+                styleContainer.setAttribute('id', 'citesupport-style-container');
+                styleContainer.hidden = true;
+                citesupport.editor.getBody().appendChild(styleContainer);
+            }
+            styleContainer.innerHTML = this.value();
             citesupport.initDocument();
         },
         values: [
@@ -20,9 +28,17 @@ tinymce.PluginManager.add('citestylemenu', function(editor) {
             { text: "JM Indigo (L. Rev.)", value: "jm-indigobook-law-review" },
             { text: "JM OSCOLA", value: "jm-oscola" }
         ],
-        onPostRender: function () {
-            // Select the second item by default
-            this.value("american-medical-association");
+        onPostRender: function (e) {
+            var me = this;
+            setTimeout(function() {
+                // Select the second item by default
+                var styleContainer = citesupport.editor.getDoc().getElementById('citesupport-style-container');
+                if (styleContainer) {
+                    me.value(styleContainer.innerHTML);
+                } else {
+                    me.value("american-medical-association");
+                }
+            }, 100);
         }
     });
 });

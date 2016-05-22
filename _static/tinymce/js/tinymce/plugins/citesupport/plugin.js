@@ -351,9 +351,9 @@ tinymce.PluginManager.add('citesupport', function(editor) {
                     footnoteMarkNode.innerHTML = (i + 1);
                 }
                 // Remove all footnotes
-                var footnotes = this.editor.getDoc().getElementsByClassName('footnote');
-                for (var i = footnotes.length - 1; i > -1; i--) {
-                    footnotes[i].parentNode.removeChild(footnotes[i]);
+                var footnotes = this.editor.getDoc().getElementById('footnotes');
+                for (var i = footnotes.childNodes.length - 1; i > -1; i--) {
+                    footnotes.removeChild(footnotes.childNodes[i]);
                 }
                 // Regenerate all footnotes from hidden texts
                 var citationNodes = this.pruneNodeList(this.editor.getDoc().getElementsByClassName('citation'));
@@ -363,7 +363,7 @@ tinymce.PluginManager.add('citesupport', function(editor) {
                     var footnote = this.editor.getDoc().createElement('p');
                     footnote.classList.add('footnote');
                     footnote.innerHTML = '<span class="footnote"><span class="footnote-number">' + footnoteNumber + '</span><span class="footnote-text">' + footnoteText + '</span></span>';
-                    footnoteContainer.appendChild(footnote);
+                    footnotes.appendChild(footnote);
                 }
             } else {
                 var footnoteContainer = this.editor.getDoc().getElementById('footnote-container');
@@ -465,6 +465,11 @@ tinymce.PluginManager.add('citesupport', function(editor) {
             for (var i = 0, ilen = citationNodes.length; i < ilen; i++) {
                 var citationID = citationNodes[i].id;
                 this.config.citationIdToPos[citationID] = i;
+            }
+            // Use stored style if available
+            var styleContainer = this.editor.getDoc().getElementById('citesupport-style-container');
+            if (styleContainer) {
+                this.config.defaultStyle = styleContainer.innerHTML;
             }
             var dataContainer = this.editor.getDoc().getElementById('citesupport-data-container');
             if (!dataContainer) {
